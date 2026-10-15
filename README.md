@@ -55,8 +55,26 @@ If an `.mp4` will not play, re-encode it:
 | Jump (over low brick walls) | W / Up / Space |
 | Slide (under beams) | S / Down / Ctrl / Shift (press in mid-air to fast-fall into a slide) |
 | Dodge by changing lane | skull blocks |
+| **Special power** | **E / F / left mouse** (costs energy; fills from studs, time and kills) |
+| HD <-> retro PS1 look | F2 |
 | Pause | Esc or P |
 | Skip cutscene | Enter / Space / Esc |
+
+## 3b. Skulkin enemies and ninja powers
+
+Skeleton warriors (and tougher horned brutes from level 2) ambush you in a lane and
+charge once you get close - dodge them or use your power. Each ninja has an element:
+
+| Ninja | Power | Effect |
+|---|---|---|
+| Kai | FIREBALL | explosive fireball, burns enemies over time |
+| Jay | LIGHTNING | chain bolt hits the 3 nearest enemies |
+| Cole | QUAKE | shockwave smashes enemies, rocks and walls |
+| Zane | FREEZE | freezes all enemies ahead; run into a frozen one to shatter it |
+| Lloyd | SPINJITZU | 3s tornado: invincible, smashes everything, pulls in studs |
+
+Enemy frequency scales with difficulty and level (`enemy` / `enemy_chance` in `config.py`).
+`config.GRAPHICS = 'HD'` (4x MSAA, full colour, no wobble) or `'RETRO'` (PS1 look).
 
 ## 4. How the requirements are met
 

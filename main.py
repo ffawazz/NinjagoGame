@@ -31,6 +31,7 @@ import ps1
 from ps1 import box
 from entities import NinjaModel, World
 from cutscene import Cutscene
+from powers import Powers
 
 ASSETS = Path(__file__).parent / 'assets'
 AUDIO_EXT = ('.ogg', '.mp3', '.wav', '.flac')
@@ -120,6 +121,10 @@ class Game(Entity):
         self.world = None
         self.player = None
         self.score_base = 0                  # banked score from finished levels
+        self.powers = None
+        self.energy = 0.0
+        self.tornado_t = 0.0
+        self.toast_t = 0.0
 
         self.menu_ninja = None
         self._aspect = 0
@@ -144,27 +149,28 @@ class Game(Entity):
         self.sel_frame = Entity(parent=m, model='quad', color=C.GOLD, z=0.2)
         self.ninja_buttons = []
         for i, n in enumerate(C.NINJAS):
-            b = Button(parent=m, text=f'{n["name"]}  -  {n["title"]}', scale=(0.56, 0.068),
-                       position=(-0.55, 0.22 - i * 0.085), color=n['suit'], text_color=color.white,
+            b = Button(parent=m, text=f'{n["name"]}  -  {n["title"]}', scale=(0.56, 0.062),
+                       position=(-0.55, 0.22 - i * 0.075), color=n['suit'], text_color=color.white,
                        highlight_color=shade(n['suit'], 1.25), pressed_color=n['suit'])
             b.on_click = (lambda i=i: self.pick_ninja(i))
             self.ninja_buttons.append(b)
-        self.perk_text = Text('', parent=m, position=(-0.85, -0.22), scale=1.2, color=C.GOLD)
+        self.perk_text = Text('', parent=m, position=(-0.85, -0.14), scale=1.1, color=C.GOLD)
+        self.power_text = Text('', parent=m, position=(-0.85, -0.19), scale=1.1, color=color.white)
 
-        Text('DIFFICULTY', parent=m, position=(-0.85, -0.29), scale=1.1, color=color.white)
+        Text('DIFFICULTY', parent=m, position=(-0.85, -0.25), scale=1.1, color=color.white)
         self.diff_buttons = {}
         diff_cols = {'EASY': C.LLOYD_GREEN, 'NORMAL': C.JAY_BLUE, 'HARD': C.KAI_RED}
         for i, d in enumerate(C.DIFFICULTY_ORDER):
-            b = Button(parent=m, text=d, scale=(0.18, 0.06), position=(-0.74 + i * 0.19, -0.36),
+            b = Button(parent=m, text=d, scale=(0.18, 0.06), position=(-0.74 + i * 0.19, -0.31),
                        color=diff_cols[d], text_color=color.white)
             b.on_click = (lambda d=d: self.pick_diff(d))
             self.diff_buttons[d] = b
-        self.start_btn = Button(parent=m, text='START RUN!', scale=(0.56, 0.08), position=(-0.55, -0.46),
+        self.start_btn = Button(parent=m, text='START RUN!', scale=(0.56, 0.07), position=(-0.55, -0.40),
                                 color=C.GOLD, text_color=C.COLE_BLACK, highlight_color=shade(C.GOLD, 1.15))
         self.start_btn.on_click = self.begin_game
         Text('UP/DOWN ninja   LEFT/RIGHT difficulty   ENTER start   ESC quit',
-             parent=m, position=(-0.85, -0.53), scale=0.8, color=color.white66)
-        Text('IN GAME:  A/D or arrows = lane   W/SPACE = jump   S/DOWN = slide   ESC = pause',
+             parent=m, position=(-0.85, -0.46), scale=0.8, color=color.white66)
+        Text('IN GAME:  A/D or arrows = lane   W/SPACE = jump   S/DOWN = slide   E = POWER   ESC = pause   F2 = HD/retro',
              parent=self.menu_right, position=(0.88, 0.47), origin=(0.5, 0), scale=0.8, color=color.white66)
 
     def _build_hud(self):
@@ -184,6 +190,12 @@ class Game(Entity):
         Entity(parent=self.hud, model='quad', color=color.rgba(0, 0, 0, 160), scale=(0.62, 0.025), y=0.47, z=1)
         self.bar = Entity(parent=self.hud, model='quad', color=C.GOLD, scale=(0.0, 0.017), y=0.47, x=-0.3, origin=(-0.5, 0))
         self.flash = Entity(parent=camera.ui, model='quad', color=color.rgba(255, 0, 0, 0), scale=(3, 2), z=-5)
+        # power / energy meter (bottom centre)
+        self.pow_bg = Entity(parent=self.hud, model='quad', color=color.rgba(0, 0, 0, 170), scale=(0.52, 0.034), y=-0.44, z=1)
+        self.pow_bar = Entity(parent=self.hud, model='quad', color=C.GOLD, scale=(0, 0.024), y=-0.44, x=-0.25, origin=(-0.5, 0))
+        self.pow_label = Text('', parent=self.hud, origin=(0, 0), y=-0.40, scale=1.0, color=color.white)
+        self.toast_shadow = Text('', parent=self.hud, origin=(0, 0), y=0.325, x=0.004, scale=1.6, color=color.black, z=0.1)
+        self.toast = Text('', parent=self.hud, origin=(0, 0), y=0.33, scale=1.6, color=C.GOLD)
 
     def _build_overlay(self):
         self.overlay = Entity(parent=camera.ui, enabled=False, z=-3)
@@ -206,6 +218,15 @@ class Game(Entity):
         self.menu_ninja_x = 3.28 * ((0.25 + ax) / 2) / ax        # centre of the free right part of the menu
         if self.menu_ninja:
             self.menu_ninja.x = self.menu_ninja_x
+
+    def flash_screen(self, col):
+        self.flash.color = col
+        self.flash.animate_color(color.rgba(col.r, col.g, col.b, 0), duration=0.35)
+
+    def say(self, text, seconds=2.2, col=None):
+        self.toast.text = self.toast_shadow.text = text
+        self.toast_t = seconds
+        self.toast.color = col or C.GOLD
 
     def show_overlay(self, big, small='', tiny='', dim=True, col=None):
         self.overlay.enabled = True
@@ -231,12 +252,14 @@ class Game(Entity):
             sel = i == self.ninja_i
             b.color = n['suit'] if sel else shade(n['suit'], 0.45)
             b.text_color = color.white if n['id'] not in ('zane',) or not sel else C.COLE_BLACK
-            b.scale = (0.6, 0.074) if sel else (0.56, 0.068)
+            b.scale = (0.6, 0.068) if sel else (0.56, 0.062)
             if sel:
                 self.sel_frame.position = (b.x, b.y, 0.2)
-                self.sel_frame.scale = (0.63, 0.092)
+                self.sel_frame.scale = (0.63, 0.082)
         n = C.NINJAS[self.ninja_i]
         self.perk_text.text = f'{n["name"]}:  {n["perk"]}   ({n["lives"]} lives)'
+        self.power_text.text = f'POWER [E]  {n["power_name"]}:  {n["power_desc"]}'
+        self.power_text.color = n['suit'] if n['id'] not in ('cole',) else color.rgb32(170, 170, 180)
         for d, b in self.diff_buttons.items():
             sel = d == self.diff_name
             b.scale = (0.2, 0.07) if sel else (0.18, 0.06)
@@ -274,6 +297,9 @@ class Game(Entity):
     #  Level setup / teardown
     # ------------------------------------------------------------------
     def _teardown_run(self):
+        if self.powers:
+            self.powers.clear()
+            self.powers = None
         if self.world:
             self.world.clear()
             self.world = None
@@ -308,6 +334,11 @@ class Game(Entity):
         self.shake = 0.0
         self.lives = spec['lives']
         self.studs = 0
+        self.energy = C.POWER_START
+        self.tornado_t = 0.0
+        self.powers = Powers(self)
+        self.told_enemy = False
+        self.was_ready = False
         self.level_time = 0.0
         self.run_clock = 0.0
         self.speed = 0.0
@@ -328,6 +359,9 @@ class Game(Entity):
     #  Input
     # ------------------------------------------------------------------
     def input(self, key):
+        if key == 'f2':                                   # HD <-> retro PS1 look
+            ps1.set_retro(not ps1.retro)
+            return
         if self.state == 'menu':
             if key == 'down arrow':
                 self.pick_ninja(self.ninja_i + 1)
@@ -352,6 +386,8 @@ class Game(Entity):
                 self.try_jump()
             elif key in C.KEYS_SLIDE:
                 self.try_slide()
+            elif key in C.KEYS_POWER:
+                self.try_power()
             elif key in C.KEYS_PAUSE:
                 self.state = 'paused'
                 self.show_overlay('PAUSED', 'ESC / P = resume', 'M = main menu')
@@ -375,6 +411,24 @@ class Game(Entity):
         elif self.state == 'victory':
             if key in ('enter', 'space', 'escape'):
                 self.go_menu()
+
+    def try_power(self):
+        cost = self.spec['power_cost']
+        if self.state != 'play' or self.tornado_t > 0:
+            return
+        if self.energy < cost:
+            self.say(f'NOT ENOUGH ENERGY  ({int(self.energy)}/{cost})', 1.0, color.rgb32(255, 120, 120))
+            return
+        self.energy -= cost
+        self.powers.cast()
+
+    def on_enemy_killed(self):
+        self.energy = min(C.POWER_MAX, self.energy + C.POWER_PER_KILL)
+        self.score_base += C.KILL_SCORE
+
+    def on_smash(self):
+        self.score_base += 25
+        self.shake = max(self.shake, 0.3)
 
     def try_jump(self):
         if self.player.y <= 0.01:
@@ -471,9 +525,30 @@ class Game(Entity):
         else:
             self.ninja.visible = True
 
+        # --- energy, tornado, enemies, powers
+        self.energy = min(C.POWER_MAX, self.energy + C.POWER_PER_SEC * dt)
+        if self.tornado_t > 0:
+            self.tornado_t -= dt
+            self.spin_angle = getattr(self, 'spin_angle', 0) + 900 * dt
+            self.ninja.rotation_y = self.spin_angle                   # Spinjitzu!
+            self.ninja.visible = True
         self.world.update(p.z)
+        for en in self.world.update_enemies(dt, p.z):                 # burned to death
+            self.powers.kill(en)
+        self.powers.update(dt)
         self._collisions(sliding)
         self._studs(dt)
+        ready = self.energy >= self.spec['power_cost']
+        if ready and not self.was_ready:
+            self.say(f'{self.spec["power_name"]} READY!  press E', 1.6)
+        self.was_ready = ready
+        if not self.told_enemy and any(0 < e.z - p.z < 60 for e in self.world.enemies):
+            self.told_enemy = True
+            self.say('SKULKIN AHEAD!  Use your power (E) or dodge!', 3.0, color.rgb32(255, 235, 90))
+        if self.toast_t > 0:
+            self.toast_t -= dt
+            if self.toast_t <= 0:
+                self.toast.text = self.toast_shadow.text = ''
 
         if p.z >= self.lv['length']:
             self._level_complete()
@@ -482,14 +557,23 @@ class Game(Entity):
     def _collisions(self, sliding):
         p = self.player
         height = C.SLIDE_HEIGHT if sliding else C.STAND_HEIGHT
-        if self.invuln > 0:
+        tornado = self.tornado_t > 0
+        if self.invuln > 0 and not tornado:
             return
-        for o in self.world.obstacles:
+        for o in self.world.obstacles + self.world.enemies:
             if abs(o.z - p.z) > o.hd + 0.35 or abs(o.x - p.x) > o.hw + 0.3:
                 continue
             if p.y + height > o.y0 + 0.05 and p.y < o.y1 - 0.05:
-                self._hit()
-                return
+                is_enemy = o.kind == 'enemy'
+                if tornado:                                   # Spinjitzu smashes everything
+                    self.powers.kill(o) if is_enemy else self.powers.smash_obstacle(o)
+                elif is_enemy and o.frozen:                   # frozen Skulkin shatter on touch
+                    self.powers.shatter(o)
+                else:
+                    self._hit()
+                    if is_enemy:
+                        self.powers.kill(o, reward=False)
+                    return
 
     def _hit(self):
         self.lives -= 1
@@ -509,13 +593,14 @@ class Game(Entity):
 
     def _studs(self, dt):
         p = self.player
-        mag = self.spec['magnet']
+        mag = 9.0 if self.tornado_t > 0 else self.spec['magnet']
         for s in self.world.studs[:]:
             s.rotation_y += 240 * dt
             if mag and 0 < s.z - p.z < mag * 1.5 and abs(s.x - p.x) < mag:
                 s.position += (p.position + Vec3(0, 1, 0.5) - s.position) * min(1, dt * 9)
             if abs(s.z - p.z) < 1.1 and abs(s.x - p.x) < 1.3 and -0.5 < s.y - p.y < 2.6:
                 self.studs += 1
+                self.energy = min(C.POWER_MAX, self.energy + C.POWER_PER_STUD)
                 self.world.studs.remove(s)
                 destroy(s)
                 self.sounds.sfx('stud', 0.6)
@@ -529,6 +614,12 @@ class Game(Entity):
         self.speed_text.text = f'{int(self.speed * 3.6)} KM/H' if self.speed else ''
         for i, e in enumerate(self.lives_icons):
             e.visible = i < self.lives
+        cost = self.spec['power_cost']
+        self.pow_bar.scale_x = 0.52 * clamp(self.energy / C.POWER_MAX, 0, 1)
+        ready = self.energy >= cost
+        self.pow_bar.color = (C.GOLD if int(time.time() * 6) % 2 else color.white) if ready else C.JAY_BLUE
+        self.pow_label.text = (f'{self.spec["power_name"]}  [E]  READY' if ready
+                               else f'{self.spec["power_name"]}  {int(self.energy)}/{cost}')
         frac = clamp(self.player.z / self.lv['length'], 0, 1)
         self.bar.scale_x = 0.62 * frac
 
@@ -615,6 +706,9 @@ def build_game(fullscreen=True, **window_kwargs):
                 ctypes.windll.user32.SetProcessDPIAware()
         except Exception:
             pass
+    # 4x multisample anti-aliasing = smooth edges (the biggest 'HD' win)
+    from panda3d.core import loadPrcFileData, AntialiasAttrib
+    loadPrcFileData('', 'framebuffer-multisample 1\nmultisamples 4')
     app = Ursina(title='NINJAGO RUNNER', fullscreen=fullscreen, borderless=fullscreen,
                  vsync=True, development_mode=False, **window_kwargs)
     window.exit_button.visible = False          # hide Ursina's red 'X' button
@@ -622,6 +716,8 @@ def build_game(fullscreen=True, **window_kwargs):
     if hasattr(window, 'cog_button'):
         window.cog_button.enabled = False
     Text.default_resolution = 1080 * Text.size  # crisper text in fullscreen
+    application.base.render.set_antialias(AntialiasAttrib.M_auto)
+    ps1.retro = C.GRAPHICS.upper() == 'RETRO'
     return app, Game()
 
 

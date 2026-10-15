@@ -6,7 +6,7 @@ precision (verts snapped to a coarse grid -> models 'wobble'), no per-pixel
 lighting (flat / Gouraud shading), 15-bit colour and a very short draw
 distance hidden by fog.  This tiny GLSL shader fakes all of that:
 
-  * vertex snapping  : clip-space XY is rounded to a low-resolution grid
+  * vertex snapping  : clip-space XY is rounded to a low-resolution grid (RETRO mode only)
   * flat shading     : face normal from screen-space derivatives (hard facets)
   * 15-bit colour    : output colour is quantised to 5 bits per channel
   * linear fog       : the PS1 'draw distance' pop-in hider
@@ -50,6 +50,7 @@ void main() {
 FRAGMENT = '''
 #version 130
 uniform vec4 fog_color;
+uniform float color_levels;     // 31 = PS1 15-bit colour, 255 = full colour
 in vec4 v_color;
 in vec3 v_viewpos;
 in float v_fog;
@@ -65,7 +66,7 @@ void main() {
     c = mix(c, fog_color.rgb, v_fog);
 
     // --- 15-bit colour (5 bits per channel)
-    c = floor(c * 31.0 + 0.5) / 31.0;
+    c = floor(c * color_levels + 0.5) / color_levels;
     fragColor = vec4(c, v_color.a);
 }
 '''
@@ -81,12 +82,25 @@ def get_shader():
     return _shader
 
 
-def set_fog(fog_color, near, far, snap=(320, 240)):
-    """Set scene-wide fog + vertex-snap grid (applies to every 3D entity)."""
+retro = False          # False = HD look, True = authentic PS1 look
+
+
+def set_retro(on):
+    """Switch between the HD and the retro PS1 look (live)."""
+    global retro
+    retro = bool(on)
+    root = application.base.render
+    snap = (320.0, 240.0) if retro else (16384.0, 16384.0)      # huge grid = no wobble
+    root.set_shader_input('snap_res', snap)
+    root.set_shader_input('color_levels', 31.0 if retro else 255.0)
+
+
+def set_fog(fog_color, near, far):
+    """Set scene-wide fog (applies to every 3D entity) and (re)apply the look."""
     root = application.base.render
     root.set_shader_input('fog_color', Vec4(fog_color.r, fog_color.g, fog_color.b, 1))
     root.set_shader_input('fog_range', (float(near), float(far)))
-    root.set_shader_input('snap_res', (float(snap[0]), float(snap[1])))
+    set_retro(retro)
 
 
 def box(parent=None, model='cube', **kwargs):

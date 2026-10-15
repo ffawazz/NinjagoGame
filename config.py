@@ -33,23 +33,35 @@ def shade(c, amount):
 #   lives           : starting hit points
 #   invuln          : seconds of invincibility after a hit
 #   magnet          : radius (world units) in which gold studs fly to you
+#   power / power_name / power_cost / power_desc : special attack (key E),
+#                     costs `power_cost` of the 100-point energy meter
 #   model           : optional file name (no extension) in assets/models/
 # ---------------------------------------------------------------------------
 NINJAS = [
     dict(id='kai',   name='KAI',   title='Ninja of Fire',      suit=KAI_RED,     accent=GOLD,
          lane_speed=15, jump=11.0, lives=3, invuln=1.5, magnet=0.0,
+         power='fire', power_name='FIREBALL', power_cost=50,
+         power_desc='Explosive fireball that burns enemies',
          perk='Fastest lane changes'),
     dict(id='jay',   name='JAY',   title='Ninja of Lightning', suit=JAY_BLUE,    accent=GOLD,
          lane_speed=11, jump=13.0, lives=3, invuln=1.5, magnet=0.0,
+         power='lightning', power_name='LIGHTNING', power_cost=50,
+         power_desc='Chain bolt hits the 3 nearest enemies',
          perk='Highest jump'),
     dict(id='cole',  name='COLE',  title='Ninja of Earth',     suit=COLE_BLACK,  accent=GOLD,
          lane_speed=11, jump=11.0, lives=3, invuln=2.6, magnet=0.0,
+         power='earth', power_name='QUAKE', power_cost=50,
+         power_desc='Shockwave smashes enemies, rocks & walls',
          perk='Long invincibility after a hit'),
     dict(id='zane',  name='ZANE',  title='Ninja of Ice',       suit=ZANE_WHITE,  accent=JAY_BLUE,
          lane_speed=11, jump=11.0, lives=4, invuln=1.5, magnet=0.0,
+         power='ice', power_name='FREEZE', power_cost=50,
+         power_desc='Freezes enemies ahead - touch to shatter',
          perk='Nindroid: +1 life'),
     dict(id='lloyd', name='LLOYD', title='The Green Ninja',    suit=LLOYD_GREEN, accent=GOLD,
          lane_speed=11, jump=11.0, lives=3, invuln=1.5, magnet=5.0,
+         power='spin', power_name='SPINJITZU', power_cost=70,
+         power_desc='Tornado: invincible, smashes everything',
          perk='Golden power: stud magnet'),
 ]
 
@@ -57,12 +69,13 @@ NINJAS = [
 # Difficulty.  These two numbers are what the brief asks us to scale:
 #   speed : forward running speed in units / second  (+ per-level multiplier)
 #   gap   : average distance between obstacle rows   (smaller = denser)
-#   extra : chance (0-1) that a row contains a second obstacle
+#   extra : chance (0-1) that a row contains a second obstacle / enemy
+#   enemy : multiplier on the level's enemy_chance (how often Skulkin ambushes appear)
 # ---------------------------------------------------------------------------
 DIFFICULTIES = {
-    'EASY':   dict(speed=14.0, gap=26.0, extra=0.15, ramp=0.010),
-    'NORMAL': dict(speed=19.0, gap=19.0, extra=0.35, ramp=0.015),
-    'HARD':   dict(speed=25.0, gap=14.0, extra=0.60, ramp=0.020),
+    'EASY':   dict(speed=14.0, gap=26.0, extra=0.15, ramp=0.010, enemy=0.6),
+    'NORMAL': dict(speed=19.0, gap=19.0, extra=0.35, ramp=0.015, enemy=1.0),
+    'HARD':   dict(speed=25.0, gap=14.0, extra=0.60, ramp=0.020, enemy=1.4),
 }
 DIFFICULTY_ORDER = ['EASY', 'NORMAL', 'HARD']
 
@@ -74,7 +87,9 @@ DIFFICULTY_ORDER = ['EASY', 'NORMAL', 'HARD']
 #   floor_a/b   : alternating floor tile colours
 #   side        : colour of the ground outside the track
 #   deco        : which scenery generator entities.py should use
-#   obstacle    : (main, trim) colours for obstacles
+#   obstacle    : (main, trim) colours for obstacles (chosen to contrast with the floor)
+#   enemy       : (bone, armour, glowing-eye) colours of the Skulkin enemies
+#   enemy_chance: chance that an obstacle row is replaced by an enemy ambush
 #   music       : optional file in assets/music/ (falls back to the main theme)
 #   video       : optional file in assets/videos/ (falls back to an animated gag)
 #   gags        : captions for the built-in animated cutscene
@@ -83,9 +98,11 @@ LEVELS = [
     dict(name='LEVEL 1', subtitle='Dojo Training Grounds',
          length=900, speed_mult=1.00,
          sky=color.rgb32(120, 200, 150), fog=color.rgb32(120, 200, 150), fog_range=(30, 150),
-         floor_a=color.rgb32(40, 150, 60), floor_b=color.rgb32(30, 120, 50),
-         side=color.rgb32(25, 90, 40), deco='bamboo',
-         obstacle=(LLOYD_GREEN, GOLD),
+         floor_a=color.rgb32(70, 135, 80), floor_b=color.rgb32(55, 115, 68),
+         side=color.rgb32(30, 85, 45), deco='bamboo',
+         obstacle=(KAI_RED, GOLD),          # red on green = unmissable
+         enemy=(color.rgb32(235, 232, 215), color.rgb32(70, 40, 25), color.rgb32(255, 70, 40)),
+         enemy_chance=0.16,
          music='level1', video='level1.mp4',
          gags=["SENSEI WU: Today's lesson - never run into a wall!",
                "LLOYD: ...I ran into three walls.",
@@ -95,7 +112,9 @@ LEVELS = [
          sky=color.rgb32(40, 8, 8), fog=color.rgb32(60, 10, 10), fog_range=(25, 130),
          floor_a=color.rgb32(40, 40, 46), floor_b=color.rgb32(26, 26, 32),
          side=color.rgb32(200, 50, 10), deco='lava',
-         obstacle=(KAI_RED, COLE_BLACK),
+         obstacle=(color.rgb32(40, 150, 255), color.rgb32(255, 255, 255)),   # bright blue on black rock
+         enemy=(color.rgb32(240, 235, 220), color.rgb32(120, 40, 170), color.rgb32(255, 170, 30)),
+         enemy_chance=0.22,
          music='level2', video='level2.mp4',
          gags=["KAI: That lava was totally not hot.",
                "COLE: Your shoes are on fire, Kai.",
@@ -105,7 +124,9 @@ LEVELS = [
          sky=color.rgb32(150, 200, 255), fog=color.rgb32(190, 220, 255), fog_range=(25, 130),
          floor_a=color.rgb32(235, 245, 255), floor_b=color.rgb32(120, 170, 235),
          side=color.rgb32(0, 90, 190), deco='ice',
-         obstacle=(JAY_BLUE, ZANE_WHITE),
+         obstacle=(KAI_RED, COLE_BLACK),      # red on ice = unmissable
+         enemy=(color.rgb32(205, 210, 225), color.rgb32(25, 25, 35), color.rgb32(255, 40, 40)),
+         enemy_chance=0.28,
          music='level3', video='level3.mp4',
          gags=["ZANE: I have calculated a 99.9% chance of victory.",
                "JAY: And the 0.1%?! Talk to me, Zane!",
@@ -136,3 +157,18 @@ KEYS_SLIDE = ('s', 'down arrow', 'left control', 'left shift')
 KEYS_PAUSE = ('escape', 'p')
 KEYS_CONFIRM = ('enter', 'space')
 KEYS_SKIP = ('enter', 'space', 'escape')
+
+# ---------------------------------------------------------------------------
+# Graphics: 'HD'    = smooth edges (4x MSAA), full 24-bit colour, no vertex wobble
+#           'RETRO' = genuine PS1 look (wobbling vertices, 15-bit colour)
+# Press F2 in game to switch live.
+# ---------------------------------------------------------------------------
+GRAPHICS = 'HD'
+
+KEYS_POWER = ('e', 'f', 'left mouse down')
+POWER_MAX = 100
+POWER_START = 50
+POWER_PER_STUD = 4
+POWER_PER_SEC = 2.0
+POWER_PER_KILL = 15
+KILL_SCORE = 50

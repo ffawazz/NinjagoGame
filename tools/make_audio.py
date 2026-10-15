@@ -126,6 +126,28 @@ def sfx():
     save(hit / np.max(np.abs(hit)) * 0.9, d / 'hit.wav')
     save(tone([523, 659, 784, 1047, 784, 1047, 1319], 0.8, 'pulse', 0.5), d / 'win.wav')
     save(tone([392, 330, 262, 196], 0.9, 'saw', 0.4), d / 'lose.wav')
+    # --- power sounds
+    n = int(0.6 * SR); t = np.arange(n) / SR
+    whoosh = rng.uniform(-1, 1, n) * np.sin(np.pi * t / 0.6) ** 2 * (0.6 + 0.4 * np.sin(2 * np.pi * 30 * t))
+    whoosh = np.convolve(whoosh, np.ones(6) / 6, mode='same') + np.sin(2 * np.pi * (200 + 500 * t) * t) * 0.3
+    save(whoosh / np.max(np.abs(whoosh)) * 0.85, d / 'fire.wav')
+    n = int(0.4 * SR); t = np.arange(n) / SR
+    zap = np.sign(np.sin(2 * np.pi * (1800 * np.exp(-t * 5)) * t + 8 * np.sin(2 * np.pi * 90 * t))) * np.exp(-t * 6) \
+        + rng.uniform(-1, 1, n) * np.exp(-t * 18)
+    save(zap / np.max(np.abs(zap)) * 0.85, d / 'zap.wav')
+    n = int(0.8 * SR); t = np.arange(n) / SR
+    quake = np.sin(2 * np.pi * (60 * np.exp(-t * 3) + 28) * t) * np.exp(-t * 3.5) \
+        + rng.uniform(-1, 1, n) * np.exp(-t * 7) * 0.5
+    save(quake / np.max(np.abs(quake)) * 0.95, d / 'quake.wav')
+    freeze = tone([2093, 1760, 1568, 1319, 1175, 988], 0.7, 'tri', 0.5)
+    save(freeze, d / 'freeze.wav')
+    n = int(0.9 * SR); t = np.arange(n) / SR
+    spin = np.sin(2 * np.pi * (300 + 400 * np.sin(np.pi * t / 0.9)) * t) * np.sin(np.pi * t / 0.9) \
+        + rng.uniform(-1, 1, n) * 0.3 * np.sin(np.pi * t / 0.9)
+    save(spin / np.max(np.abs(spin)) * 0.85, d / 'spin.wav')
+    n = int(0.25 * SR); t = np.arange(n) / SR
+    kill = (rng.uniform(-1, 1, n) * np.exp(-t * 25) + np.sin(2 * np.pi * (500 * np.exp(-t * 12) + 150) * t)) * np.exp(-t * 5)
+    save(kill / np.max(np.abs(kill)) * 0.85, d / 'kill.wav')
 
 
 if __name__ == '__main__':

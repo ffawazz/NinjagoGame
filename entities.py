@@ -20,6 +20,7 @@ from ursina.models.procedural.cone import Cone
 import config as C
 from config import shade
 from ps1 import box
+from enemies import Enemy
 
 ASSET_DIR = Path(__file__).parent / 'assets'
 SKULL_WHITE = color.rgb32(235, 232, 215)
@@ -152,6 +153,19 @@ def _tag(e, kind, hw, hd, y0, y1):
     return e
 
 
+HAZARD_Y = color.rgb32(255, 214, 0)
+HAZARD_K = color.rgb32(20, 20, 20)
+
+
+def hazard_band(root, x, y, width, z, h=0.22):
+    """Black/yellow warning stripes facing the player - reads clearly against any floor."""
+    n = max(2, int(width / 0.4))
+    w = width / n
+    for i in range(n):
+        box(root, position=(x - width / 2 + w * (i + 0.5), y, z), scale=(w, h, 0.03),
+            color=HAZARD_Y if i % 2 == 0 else HAZARD_K)
+
+
 def make_low(x, z, lanes, pal):
     """Low LEGO brick wall - JUMP over it.  lanes = 1 or 3."""
     main, trim = pal
@@ -162,7 +176,7 @@ def make_low(x, z, lanes, pal):
         box(root, position=(bx, 0.45, 0), scale=(2.0, 0.9, 1.1), color=main)
         for sx in (-0.5, 0.5):                                 # LEGO studs on top
             box(root, position=(bx + sx, 1.0, 0), scale=(0.5, 0.2, 0.5), color=trim)
-        box(root, position=(bx, 0.45, -0.56), scale=(2.0, 0.18, 0.02), color=trim)
+        hazard_band(root, bx, 0.45, 2.0, -0.57)
     return _tag(root, 'low', width / 2, 0.55, 0.0, 0.9)
 
 
@@ -192,6 +206,7 @@ def make_wall(x, z, pal):
     box(root, position=(-0.35, 2.0, -0.7), scale=(0.35, 0.4, 0.04), color=color.black)
     box(root, position=(0.35, 2.0, -0.7), scale=(0.35, 0.4, 0.04), color=color.black)
     box(root, position=(0, 1.5, -0.7), scale=(0.7, 0.18, 0.04), color=color.black)
+    hazard_band(root, 0, 0.35, 2.0, -0.68, 0.4)
     return _tag(root, 'wall', 1.05, 0.65, 0.0, 3.2)
 
 
@@ -230,7 +245,7 @@ def build_deco(parent, theme, rng):
                 box(parent, position=(x, h / 2, z), scale=(0.5, h, 0.5), color=col)
                 box(parent, position=(x, h * 0.6, z), scale=(0.7, 0.15, 0.7), color=shade(col, 0.6))
                 if rng.random() < 0.25:                    # little gold-roofed dojo
-                    box(parent, position=(x, 1.5, z), scale=(5, 3, 5), color=C.KAI_RED)
+                    box(parent, position=(x, 1.5, z), scale=(5, 3, 5), color=color.rgb32(150, 100, 60))
                     box(parent, position=(x, 3.6, z), model=cone5(), scale=(8, 2.2, 8), color=C.GOLD)
             elif theme == 'lava':
                 h = rng.uniform(6, 16)
@@ -294,7 +309,8 @@ class World:
         self.diff = diff
         self.spawn_speed = speed_for_spawn        # base speed used to size gaps
         self.rng = random.Random()
-        self.obstacles, self.studs = [], []
+        self.obstacles, self.studs, self.enemies = [], [], []
+        self.level_index = C.LEVELS.index(level)
         self.chunks = [Chunk(level, self.rng, z=(i - 1) * C.CHUNK_LENGTH)   # one chunk behind the start
                        for i in range(C.VIEW_CHUNKS)]
         self.next_chunk = C.VIEW_CHUNKS - 1
@@ -322,7 +338,7 @@ class World:
             self.next_chunk += 1
         self._spawn_until(player_z + C.SPAWN_AHEAD)
         # cull things we have passed
-        for lst in (self.obstacles, self.studs):
+        for lst in (self.obstacles, self.studs, self.enemies):
             for e in lst[:]:
                 if e.z < player_z - 20:
                     lst.remove(e)
@@ -349,6 +365,20 @@ class World:
 
         full_width = False
         r = rng.random()
+        enemy_p = self.level['enemy_chance'] * d['enemy']
+        if not self.last_was_action and rng.random() < enemy_p:
+            # --- Skulkin ambush: 1-2 enemies, always leaving one lane free
+            n = 2 if rng.random() < d['extra'] * 0.8 else 1
+            for i in range(n):
+                brute = self.level_index >= 1 and rng.random() < 0.3
+                self.enemies.append(Enemy('brute' if brute else 'warrior', C.LANES[lanes[i]],
+                                          z + rng.uniform(0, 6), self.level['enemy']))
+            self.last_was_action = False
+            gap = max(d['gap'] * rng.uniform(0.9, 1.3), self.spawn_speed * 0.7)
+            for i in range(max(int((gap - 8) // 2.6), 0)):
+                self.studs.append(make_stud(C.LANES[lanes[2]], 1.0, z + 5 + i * 2.6))
+            self.spawn_z += gap
+            return
         if r < 0.55:                                   # one single-lane obstacle (+ maybe another)
             kinds = ['wall', 'low', 'beam']
             first = rng.choice(kinds)
@@ -376,7 +406,11 @@ class World:
             self.studs.append(make_stud(C.LANES[free_lane], 1.0, z + 5 + i * 2.6))
         self.spawn_z += gap
 
+    def update_enemies(self, dt, player_z):
+        """Run enemy AI.  Returns the list of enemies that burned to death this frame."""
+        return [en for en in self.enemies[:] if en.update_ai(dt, player_z)]
+
     def clear(self):
-        for e in self.obstacles + self.studs + self.chunks + [self.gate, self.backdrop]:
+        for e in self.obstacles + self.studs + self.enemies + self.chunks + [self.gate, self.backdrop]:
             destroy(e)
-        self.obstacles, self.studs, self.chunks = [], [], []
+        self.obstacles, self.studs, self.enemies, self.chunks = [], [], [], []
