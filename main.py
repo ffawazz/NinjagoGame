@@ -121,10 +121,12 @@ class Game(Entity):
         self.player = None
         self.score_base = 0                  # banked score from finished levels
 
+        self.menu_ninja = None
+        self._aspect = 0
         self._build_menu()
         self._build_hud()
         self._build_overlay()
-        self.menu_ninja = None
+        self.apply_layout()
         self.go_menu()
 
     # ------------------------------------------------------------------
@@ -132,7 +134,8 @@ class Game(Entity):
     # ------------------------------------------------------------------
     def _build_menu(self):
         self.menu = Entity(parent=camera.ui, enabled=False)
-        m = self.menu
+        m = self.menu_left = Entity(parent=self.menu)      # anchored to the left screen edge
+        self.menu_right = Entity(parent=self.menu)          # anchored to the right screen edge
         Entity(parent=m, model='quad', color=color.rgba(0, 0, 0, 120), scale=(1.0, 1.2), x=-0.48, z=2)
         Text('NINJAGO', parent=m, position=(-0.85, 0.46), scale=4, color=C.GOLD)
         Text('SPINJITZU RUNNER', parent=m, position=(-0.85, 0.37), scale=1.9, color=C.KAI_RED)
@@ -162,23 +165,24 @@ class Game(Entity):
         Text('UP/DOWN ninja   LEFT/RIGHT difficulty   ENTER start   ESC quit',
              parent=m, position=(-0.85, -0.53), scale=0.8, color=color.white66)
         Text('IN GAME:  A/D or arrows = lane   W/SPACE = jump   S/DOWN = slide   ESC = pause',
-             parent=m, position=(0.88, 0.47), origin=(0.5, 0), scale=0.8, color=color.white66)
+             parent=self.menu_right, position=(0.88, 0.47), origin=(0.5, 0), scale=0.8, color=color.white66)
 
     def _build_hud(self):
         self.hud = Entity(parent=camera.ui, enabled=False)
-        h = self.hud
+        h = self.hud_left = Entity(parent=self.hud)
+        self.hud_right = Entity(parent=self.hud)
         self.score_text = Text('', parent=h, position=(-0.87, 0.48), scale=1.8, color=C.GOLD)
         self.stud_text = Text('', parent=h, position=(-0.87, 0.42), scale=1.2, color=color.white)
-        self.level_text = Text('', parent=h, position=(0.87, 0.48), origin=(0.5, 0), scale=1.3, color=color.white)
-        self.speed_text = Text('', parent=h, position=(0.87, 0.43), origin=(0.5, 0), scale=1.0, color=C.JAY_BLUE)
+        self.level_text = Text('', parent=self.hud_right, position=(0.87, 0.48), origin=(0.5, 0), scale=1.3, color=color.white)
+        self.speed_text = Text('', parent=self.hud_right, position=(0.87, 0.43), origin=(0.5, 0), scale=1.0, color=C.JAY_BLUE)
         self.lives_icons = []
         for i in range(6):
             e = Entity(parent=h, model='quad', color=C.LEGO_YELLOW, scale=(0.035, 0.035), position=(-0.85 + i * 0.045, 0.37))
             Entity(parent=e, model='quad', color=color.black, scale=(0.5, 0.12), y=0.05, z=-0.01)
             self.lives_icons.append(e)
         # level progress bar
-        Entity(parent=h, model='quad', color=color.rgba(0, 0, 0, 160), scale=(0.62, 0.025), y=0.47, z=1)
-        self.bar = Entity(parent=h, model='quad', color=C.GOLD, scale=(0.0, 0.017), y=0.47, x=-0.3, origin=(-0.5, 0))
+        Entity(parent=self.hud, model='quad', color=color.rgba(0, 0, 0, 160), scale=(0.62, 0.025), y=0.47, z=1)
+        self.bar = Entity(parent=self.hud, model='quad', color=C.GOLD, scale=(0.0, 0.017), y=0.47, x=-0.3, origin=(-0.5, 0))
         self.flash = Entity(parent=camera.ui, model='quad', color=color.rgba(255, 0, 0, 0), scale=(3, 2), z=-5)
 
     def _build_overlay(self):
@@ -187,6 +191,21 @@ class Game(Entity):
         self.big = Text('', parent=self.overlay, origin=(0, 0), y=0.12, scale=4, color=C.GOLD)
         self.small = Text('', parent=self.overlay, origin=(0, 0), y=-0.02, scale=1.6, color=color.white)
         self.tiny = Text('', parent=self.overlay, origin=(0, 0), y=-0.14, scale=1.1, color=color.white66)
+
+    def apply_layout(self):
+        """
+        The UI was designed for a 16:9 screen (x from -0.889 to +0.889).
+        Re-anchor the left/right groups to the REAL window edges so nothing
+        is cut off on 16:10, 4:3, ultrawide or odd Windows scaling.
+        """
+        ax = window.aspect_ratio / 2
+        self._aspect = window.aspect_ratio
+        left, right = 0.889 - ax, ax - 0.889
+        self.menu_left.x = self.hud_left.x = left
+        self.menu_right.x = self.hud_right.x = right
+        self.menu_ninja_x = 3.28 * ((0.25 + ax) / 2) / ax        # centre of the free right part of the menu
+        if self.menu_ninja:
+            self.menu_ninja.x = self.menu_ninja_x
 
     def show_overlay(self, big, small='', tiny='', dim=True, col=None):
         self.overlay.enabled = True
@@ -227,7 +246,7 @@ class Game(Entity):
     def _spawn_menu_ninja(self):
         if self.menu_ninja:
             destroy(self.menu_ninja)
-        self.menu_ninja = NinjaModel(C.NINJAS[self.ninja_i], position=(1.9, 0, 0), scale=1.0, rotation_y=160)
+        self.menu_ninja = NinjaModel(C.NINJAS[self.ninja_i], position=(self.menu_ninja_x, 0, 0), scale=1.0, rotation_y=160)
 
     def go_menu(self):
         self._teardown_run()
@@ -279,7 +298,7 @@ class Game(Entity):
 
         # --- player: a root entity (logic) holding the visual model -----
         self.player = Entity(position=(0, 0, 0))
-        self.model = NinjaModel(spec, parent=self.player, scale=0.9)
+        self.ninja = NinjaModel(spec, parent=self.player, scale=0.9)
         self.lane = 1
         self.vy = 0.0
         self.slide_t = 0.0
@@ -376,6 +395,8 @@ class Game(Entity):
     #  Per-frame update
     # ------------------------------------------------------------------
     def update(self):
+        if abs(window.aspect_ratio - self._aspect) > 0.001:
+            self.apply_layout()                   # window size changed
         dt = min(time.dt, 0.05)
         self.lock = max(0, self.lock - dt)
 
@@ -392,7 +413,7 @@ class Game(Entity):
         elif self.state == 'finish':
             self._update_finish(dt)
         elif self.state in ('gameover', 'victory'):
-            self.model.rotation_y += 90 * dt
+            self.ninja.rotation_y += 90 * dt
         if self.state in ('intro', 'play', 'finish', 'paused', 'gameover', 'victory'):
             self._update_camera(dt)
 
@@ -400,7 +421,7 @@ class Game(Entity):
     def _update_intro(self, dt):
         self.intro_t += dt
         self.world.update(self.player.z)
-        self.model.animate_run(self.intro_t * 2, 4, 'run')
+        self.ninja.animate_run(self.intro_t * 2, 4, 'run')
         t = self.intro_t
         if t > 1.6:
             n = 3 - int(t - 1.6)
@@ -424,7 +445,7 @@ class Game(Entity):
         target = C.LANES[self.lane]
         dx = target - p.x
         p.x += dx * min(1.0, self.spec['lane_speed'] * dt)
-        self.model.rotation_y = clamp(dx * 14, -28, 28)
+        self.ninja.rotation_y = clamp(dx * 14, -28, 28)
 
         # jump / gravity
         if p.y > 0 or self.vy > 0:
@@ -439,16 +460,16 @@ class Game(Entity):
             self.slide_t -= dt
         sliding = self.slide_t > 0 and p.y <= 0.01
         state = 'slide' if sliding else ('jump' if p.y > 0.05 else 'run')
-        self.model.animate_run(self.run_clock, self.speed, state)
+        self.ninja.animate_run(self.run_clock, self.speed, state)
         if state != 'run':
-            self.model.y = 0 if state == 'slide' else self.model.y
+            self.ninja.y = 0 if state == 'slide' else self.ninja.y
 
         # invulnerability blink
         if self.invuln > 0:
             self.invuln -= dt
-            self.model.visible = int(self.invuln * 14) % 2 == 0
+            self.ninja.visible = int(self.invuln * 14) % 2 == 0
         else:
-            self.model.visible = True
+            self.ninja.visible = True
 
         self.world.update(p.z)
         self._collisions(sliding)
@@ -481,7 +502,7 @@ class Game(Entity):
         if self.lives <= 0:
             self.state = 'gameover'
             self.lock = 0.8
-            self.model.visible = True
+            self.ninja.visible = True
             self.sounds.sfx('lose')
             self.show_overlay('GAME OVER', f'SCORE  {self.total_score()}',
                               'ENTER = retry level     M = main menu', col=C.KAI_RED)
@@ -519,7 +540,7 @@ class Game(Entity):
         self.studs_banked = self.studs
         self.sounds.sfx('win')
         self.show_overlay('LEVEL CLEAR!', f'SCORE  {self.score_base}', '', dim=False, col=C.GOLD)
-        self.model.visible = True
+        self.ninja.visible = True
 
     def _update_finish(self, dt):
         self.finish_t += dt
@@ -527,7 +548,7 @@ class Game(Entity):
         self.speed = max(0, self.speed - 30 * dt)
         p.z += self.speed * dt
         p.x += (0 - p.x) * min(1, 4 * dt)
-        self.model.animate_run(self.finish_t * 1.5, self.speed, 'run' if self.speed > 6 else 'jump')
+        self.ninja.animate_run(self.finish_t * 1.5, self.speed, 'run' if self.speed > 6 else 'jump')
         if self.speed <= 6:                                   # victory hop
             p.y = abs(sin(self.finish_t * 6)) * 1.0
         if self.finish_t > 2.4:
@@ -550,8 +571,8 @@ class Game(Entity):
         window.color = C.GOLD
         ps1.set_fog(C.GOLD, 50, 100)
         self.player = Entity(position=(0, 0, 0))
-        self.model = NinjaModel(self.spec, parent=self.player, scale=1.0)
-        self.model.animate_run(1, 0, 'jump')
+        self.ninja = NinjaModel(self.spec, parent=self.player, scale=1.0)
+        self.ninja.animate_run(1, 0, 'jump')
         self.state = 'victory'
         self.lock = 0.8
         camera.position, camera.rotation, camera.fov = (0, 2.0, -8), (0, 0, 0), 50
@@ -583,6 +604,17 @@ class Game(Entity):
 # ===========================================================================
 def build_game(fullscreen=True, **window_kwargs):
     """Create the engine window + Game.  Split out so tests can call it."""
+    if sys.platform == 'win32':
+        # Without this, Windows display scaling (125%, 150%...) makes the window
+        # bigger than the screen so parts of the game fall off the edges.
+        try:
+            import ctypes
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except Exception:
+                ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
     app = Ursina(title='NINJAGO RUNNER', fullscreen=fullscreen, borderless=fullscreen,
                  vsync=True, development_mode=False, **window_kwargs)
     window.exit_button.visible = False          # hide Ursina's red 'X' button
